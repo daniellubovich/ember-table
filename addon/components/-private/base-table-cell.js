@@ -72,6 +72,10 @@ export default Component.extend({
         this.element.style.paddingLeft = 0;
         this.element.style.paddingRight = 0;
         this.element.style.display = width === '0px' ? 'none' : 'table-cell';
+      } else {
+        this.element.style.paddingLeft = null;
+        this.element.style.paddingRight = null;
+        this.element.style.display = null;
       }
     }
   },

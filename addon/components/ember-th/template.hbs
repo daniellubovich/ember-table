@@ -1,7 +1,6 @@
 {{#if hasBlock}}
   {{yield this.columnValue this.columnMeta this.rowMeta}}
 {{else}}
-  {{this.columnValue.name}}
 
   {{ember-th/sort-indicator columnMeta=this.columnMeta}}
 
