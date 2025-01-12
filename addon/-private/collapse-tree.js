@@ -161,6 +161,7 @@ export const TableRowMeta = EmberObject.extend({
     let rowIndex = get(this, 'index');
     let isGroupSelected = get(this, 'isGroupSelected');
     let selectingChildrenSelectsParent = get(tree, 'selectingChildrenSelectsParent');
+    let selectionMatchFunction = get(tree, 'selectionMatchFunction');
 
     let rowMetaCache = get(tree, 'rowMetaCache');
 
@@ -181,10 +182,15 @@ export const TableRowMeta = EmberObject.extend({
 
     // If the old selection is an array, then we add to it. If not, we restart
     // the selection as a group.
-    let selection = isArray(oldSelection) ? new Set(oldSelection) : new Set();
+    let selection = isArray(oldSelection) ? [...oldSelection] : [];
+
+    const isItemSelected = (item) => {
+      return selectionMatchFunction
+        ? selection.some(selectedItem => selectionMatchFunction(selectedItem, item))
+        : selection.includes(item);
+    };
 
     if (range) {
-      // Use a set to avoid item duplication
       let { _lastSelectedIndex } = tree;
 
       let isFirstIndexDefined = typeof _lastSelectedIndex === 'number';
@@ -193,7 +199,10 @@ export const TableRowMeta = EmberObject.extend({
       let maxIndex = isFirstIndexDefined ? Math.max(_lastSelectedIndex, rowIndex) : rowIndex;
 
       for (let i = minIndex; i <= maxIndex; i++) {
-        selection.add(tree.objectAt(i));
+        let item = tree.objectAt(i);
+        if (!isItemSelected(item)) {
+          selection.push(item);
+        }
       }
     } else if (toggle) {
       if (isGroupSelected) {
@@ -237,20 +246,23 @@ export const TableRowMeta = EmberObject.extend({
 
             // Else, this is a child node which must be explictly selected.
             // Add it to the list.
-            selection.add(child);
+            if (!isItemSelected(child)) {
+              selection.push(child);
+            }
           }
 
-          selection.delete(currentValue);
+          selection = selection.filter(item => !selectionMatchFunction ? item !== currentValue : !selectionMatchFunction(item, currentValue));
           currentValue = get(meta, '_rowValue');
         }
 
-        selection.delete(currentValue);
+        selection = selection.filter(item => !selectionMatchFunction ? item !== currentValue : !selectionMatchFunction(item, currentValue));
       } else {
-        selection.add(rowValue);
+        if (!isItemSelected(rowValue)) {
+          selection.push(rowValue);
+        }
       }
     } else {
-      selection.clear();
-      selection.add(rowValue);
+      selection = [rowValue];
     }
 
     let rowMetas = mapSelectionToMeta(this.get('_tree'), selection, rowMetaCache);
@@ -267,7 +279,7 @@ export const TableRowMeta = EmberObject.extend({
         }
       }
 
-      reduceSelectedRows(selection, groupingCounts, rowMetaCache);
+      reduceSelectedRows(selection, groupingCounts, rowMetaCache, isItemSelected);
     }
 
     for (let rowMeta of rowMetas) {
@@ -275,8 +287,8 @@ export const TableRowMeta = EmberObject.extend({
       let parentMeta = get(rowMeta, '_parentMeta');
 
       while (parentMeta) {
-        if (selection.has(get(parentMeta, '_rowValue'))) {
-          selection.delete(rowValue);
+        if (isItemSelected(get(parentMeta, '_rowValue'))) {
+          selection = selection.filter(item => !selectionMatchFunction ? item !== rowValue : !selectionMatchFunction(item, rowValue));
           break;
         }
 
@@ -284,7 +296,7 @@ export const TableRowMeta = EmberObject.extend({
       }
     }
 
-    selection = emberA(Array.from(selection));
+    selection = emberA(selection);
 
     tree.onSelect?.(selection, { abort });
 
@@ -302,12 +314,14 @@ export const TableRowMeta = EmberObject.extend({
   },
 });
 
-function reduceSelectedRows(selection, groupingCounts, rowMetaCache) {
+function reduceSelectedRows(selection, groupingCounts, rowMetaCache, checkRowSelectionFunction) {
   let reducedGroupingCounts = new Map();
 
   for (let [group, count] of groupingCounts.entries()) {
     if (get(group, 'children.length') === count) {
-      selection.add(group);
+      if (!checkRowSelectionFunction(group)) {
+        selection.push(group);
+      }
 
       let parentRow = rowMetaCache.get(group).get('_parentMeta._rowValue');
 
@@ -321,7 +335,7 @@ function reduceSelectedRows(selection, groupingCounts, rowMetaCache) {
   }
 
   if (reducedGroupingCounts.size > 0) {
-    reduceSelectedRows(selection, reducedGroupingCounts, rowMetaCache);
+    reduceSelectedRows(selection, reducedGroupingCounts, rowMetaCache, checkRowSelectionFunction);
   }
 }
 
